@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: mock-supplier
+
+server:
+  # 본 애플리케이션(8080)과 반드시 다른 포트여야 한다.
+  port: 9090

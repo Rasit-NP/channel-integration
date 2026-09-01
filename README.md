@@ -24,7 +24,7 @@
 | 공급사 연동 어댑터 | 📐 설계 확정 · 미구현 |
 | 통합 검색 API | 📐 설계 확정 · 미구현 |
 | 연동 견고성 (병렬·타임아웃·부분 실패) | 📐 설계 확정 · 미구현 |
-| Mock Supplier | 📐 설계 확정 · 미구현 |
+| Mock Supplier (정상/장애/무응답 3모드) | ✅ 구현 |
 
 ---
 
@@ -44,7 +44,12 @@ JDK 21 이 필요합니다. Gradle 은 wrapper 를 사용하므로 별도 설치
 지금은 어떤 경로로 요청해도 404 를 반환합니다**(§구현 현황). 현재 확인할 수 있는 것은
 애플리케이션이 리액티브가 아닌 MVC(Servlet) 스택으로 기동한다는 사실까지입니다.
 
-Mock Supplier 는 **반드시 다른 포트**로 띄웁니다(§Mock Supplier).
+Mock Supplier 는 **별도 프로세스**로 띄웁니다. 본 애플리케이션과 같은 포트에 두면 안 됩니다
+(§Mock Supplier).
+
+```bash
+./gradlew :mock-supplier:bootRun
+```
 
 ---
 
@@ -343,6 +348,27 @@ Mock 은 세 상황을 재현할 수 있어야 합니다.
 
 정상 응답만 재현할 수 있으면 타임아웃과 부분 실패가 실제로 동작하는지 보일 수 없습니다.
 이 셋이 있어야 견고성 설계가 검증됩니다.
+
+`mock-supplier` 서브프로젝트가 이를 구현합니다. 요청 파라미터는 무시하고 고정 응답을 주며,
+런타임에 모드를 바꿔 고장을 재현합니다.
+
+```bash
+curl -X POST 'http://localhost:9090/control/a/mode?value=no-response'  # A 무응답
+curl -X POST 'http://localhost:9090/control/b/mode?value=error'        # B 장애
+curl -X POST 'http://localhost:9090/control/a/mode?value=normal'       # 정상 복귀
+```
+
+장애 모드에서 두 공급사가 **서로 다르게** 실패한다는 점이 핵심입니다. 실측 결과입니다.
+
+| 공급사 | 장애 모드 응답 |
+| --- | --- |
+| A | `HTTP 503` + `{"error":"SERVICE_UNAVAILABLE", ...}` |
+| B | **`HTTP 200`** + `{"resultCode":"E503", "data":null}` |
+
+어댑터가 이 둘을 같은 실패로 정규화하는지 확인하려면 Mock 이 차이를 그대로 재현해야 합니다.
+
+숙소 목록 API 에는 장애 모드를 걸지 않았습니다. 매핑을 만드는 단계가 실패했을 때의 처리는
+검색 경로의 부분 실패와 성격이 다른 주제라 분리했습니다(§숙소 목록을 언제 동기화하는가).
 
 ---
 
