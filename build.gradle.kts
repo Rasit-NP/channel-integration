@@ -28,6 +28,10 @@ dependencies {
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Mock 공급사를 테스트에서 직접 띄워 실제 HTTP 로 검증한다.
+    // 운영 의존성이 아니라 테스트 픽스처다.
+    testImplementation(project(":mock-supplier"))
 }
 
 tasks.withType<Test> {

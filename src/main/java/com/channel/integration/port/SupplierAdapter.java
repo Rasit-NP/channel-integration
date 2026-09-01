@@ -2,6 +2,8 @@ package com.channel.integration.port;
 
 import java.util.List;
 
+import reactor.core.publisher.Mono;
+
 import com.channel.integration.domain.SearchCriteria;
 import com.channel.integration.domain.SupplierCode;
 
@@ -37,14 +39,18 @@ public interface SupplierAdapter {
      * 공급사가 취급하는 숙소·객실 타입 전체 목록. 조건 파라미터가 없는 정적 콘텐츠다.
      * 매핑을 만들 때 쓴다.
      */
-    SupplierFetchResult<List<SupplierProperty>> fetchProperties();
+    Mono<SupplierFetchResult<List<SupplierProperty>>> fetchProperties();
 
     /**
      * 숙소 코드 묶음에 대한 재고·요금.
      *
+     * <p>{@code Mono} 를 돌려주는 이유는 여러 공급사를 동시에 기다리기 위해서다. 값을 바로
+     * 반환하면 병렬 호출에 별도 스레드 풀이 필요하고, 응답을 기다리는 동안 스레드가 묶인다.
+     * 블로킹은 컨트롤러 경계 한 곳에서만 한다.
+     *
      * @param propertyCodes 조회할 숙소 코드. {@link #maxBatchSize()} 이하로 전달되어야 한다.
      * @param criteria      날짜와 인원
      */
-    SupplierFetchResult<List<SupplierOffer>> fetchOffers(
+    Mono<SupplierFetchResult<List<SupplierOffer>>> fetchOffers(
             List<String> propertyCodes, SearchCriteria criteria);
 }

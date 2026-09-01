@@ -5,3 +5,14 @@ spring:
     # spring-boot-starter-webflux 는 WebClient 를 쓰기 위해서만 의존한다.
     # 클래스패스에 리액티브 스택이 올라와도 웹 스택은 항상 MVC(Servlet)로 고정한다.
     web-application-type: servlet
+
+supplier:
+  # 실제 공급사를 호출하지 않는다. Mock 이 9090 에 떠 있어야 한다.
+  #   ./gradlew :mock-supplier:bootRun
+  a:
+    base-url: http://localhost:9090
+    api-key: local-dev-key
+    # 관측 후 조정하기 위해 설정으로 뺐다. 근거는 README §타임아웃 참고.
+    connect-timeout: 2s
+    response-timeout: 3s
+    max-batch-size: 50
