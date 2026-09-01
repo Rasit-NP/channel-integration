@@ -1,0 +1,7 @@
+spring:
+  application:
+    name: integration
+  main:
+    # spring-boot-starter-webflux 는 WebClient 를 쓰기 위해서만 의존한다.
+    # 클래스패스에 리액티브 스택이 올라와도 웹 스택은 항상 MVC(Servlet)로 고정한다.
+    web-application-type: servlet
