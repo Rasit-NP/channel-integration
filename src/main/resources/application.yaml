@@ -6,6 +6,19 @@ spring:
     # 클래스패스에 리액티브 스택이 올라와도 웹 스택은 항상 MVC(Servlet)로 고정한다.
     web-application-type: servlet
 
+  datasource:
+    # 메모리가 아니라 파일이다. 기동 시 동기화가 실패해도 이미 저장된 매핑으로 검색을
+    # 계속 서빙한다는 것이 설계인데, 메모리로 두면 재기동마다 그 전제가 사라진다.
+    url: jdbc:h2:file:./data/integration
+    username: sa
+    password:
+
+  sql:
+    init:
+      # 파일 모드 H2 는 Boot 가 임베디드로 보지 않아 기본값(embedded)으로는 schema.sql 이
+      # 실행되지 않는다. 명시해 두고, 스크립트는 if not exists 로 여러 번 실행돼도 되게 썼다.
+      mode: always
+
 supplier:
   # 실제 공급사를 호출하지 않는다. Mock 이 9090 에 떠 있어야 한다.
   #   ./gradlew :mock-supplier:bootRun

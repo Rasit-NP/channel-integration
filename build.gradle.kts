@@ -26,6 +26,11 @@ dependencies {
     // 웹 스택은 application.yaml 의 web-application-type=servlet 으로 고정한다.
     implementation("org.springframework.boot:spring-boot-starter-webflux")
 
+    // 저장하는 것은 공급사 코드 ↔ 내부 식별자 매핑뿐이다. 테이블 2개에 조인이 없어
+    // ORM 이 줄여줄 코드가 거의 없으므로 JdbcClient 로 간다. 스키마는 schema.sql 이 소유한다.
+    implementation("org.springframework.boot:spring-boot-starter-jdbc")
+    runtimeOnly("com.h2database:h2")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
