@@ -11,6 +11,7 @@ import com.channel.integration.adapter.a.SupplierAResponses.HotelsResponse;
 import com.channel.integration.adapter.support.HttpFailures;
 import com.channel.integration.domain.SearchCriteria;
 import com.channel.integration.domain.SupplierCode;
+import com.channel.integration.port.FailureReason;
 import com.channel.integration.port.SupplierAdapter;
 import com.channel.integration.port.SupplierFetchResult;
 import com.channel.integration.port.SupplierOffer;
@@ -72,8 +73,12 @@ class SupplierAAdapter implements SupplierAdapter {
         }
         if (propertyCodes.size() > maxBatchSize()) {
             // 묶음을 나누는 건 호출하는 쪽 책임이다. 넘겨서 공급사 오류를 받기 전에 여기서 막는다.
-            throw new IllegalArgumentException(
-                    "묶음 크기 초과: %d > %d".formatted(propertyCodes.size(), maxBatchSize()));
+            //
+            // 막되 예외로 던지지 않는다. 이것도 이 공급사 한 곳의 실패이고, 예외로 나가면 여러
+            // 공급사를 병합하는 쪽에서 그 하나 때문에 전체 흐름이 끊긴다. 다른 실패와 같은
+            // 자료구조로 돌려야 부분 실패를 허용할 수 있다.
+            return Mono.just(failure("재고·요금", FailureReason.INVALID_REQUEST,
+                    "묶음 크기 초과: %d > %d".formatted(propertyCodes.size(), maxBatchSize())));
         }
 
         return webClient.get()
@@ -92,8 +97,10 @@ class SupplierAAdapter implements SupplierAdapter {
     }
 
     private <T> SupplierFetchResult<T> toFailure(String operation, Throwable error) {
-        var reason = HttpFailures.fromThrowable(error);
-        var detail = HttpFailures.describe(error);
+        return failure(operation, HttpFailures.fromThrowable(error), HttpFailures.describe(error));
+    }
+
+    private <T> SupplierFetchResult<T> failure(String operation, FailureReason reason, String detail) {
         log.warn("공급사 {} {} 조회 실패: reason={} detail={}", SUPPLIER_CODE, operation, reason, detail);
         return SupplierFetchResult.failure(reason, detail);
     }

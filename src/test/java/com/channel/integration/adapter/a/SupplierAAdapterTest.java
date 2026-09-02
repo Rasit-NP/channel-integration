@@ -1,7 +1,6 @@
 package com.channel.integration.adapter.a;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -143,14 +142,18 @@ class SupplierAAdapterTest {
         }
 
         @Test
-        @DisplayName("묶음 크기를 넘기면 호출 전에 막는다")
+        @DisplayName("묶음 크기를 넘기면 호출하지 않고 실패 값으로 돌려준다")
         void rejectsOversizedBatch() {
-            SupplierAAdapter adapter = adapterWithJson(HttpStatus.OK, "{\"items\":[]}");
+            SupplierAAdapter adapter = adapterReturning(request -> {
+                throw new AssertionError("호출하면 안 된다");
+            });
             List<String> tooMany = java.util.stream.IntStream.rangeClosed(1, 51)
                     .mapToObj(i -> "A-" + i).toList();
 
-            assertThatThrownBy(() -> adapter.fetchOffers(tooMany, CRITERIA))
-                    .isInstanceOf(IllegalArgumentException.class);
+            // 예외로 던지면 병합하는 쪽에서 이 하나 때문에 전체가 끊긴다. 다른 실패와 같은 경로여야 한다.
+            var result = adapter.fetchOffers(tooMany, CRITERIA).block();
+
+            assertThat(result.failureReason()).contains(FailureReason.INVALID_REQUEST);
         }
     }
 
