@@ -2,19 +2,15 @@ package com.channel.integration.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import com.channel.integration.domain.MappingSnapshot;
-import com.channel.integration.domain.PropertyMapping;
-import com.channel.integration.domain.RoomTypeMapping;
 import com.channel.integration.domain.SearchCriteria;
 import com.channel.integration.domain.SupplierCode;
 import com.channel.integration.port.FailureReason;
-import com.channel.integration.port.MappingRepository;
 import com.channel.integration.port.SupplierAdapter;
 import com.channel.integration.port.SupplierFetchResult;
 import com.channel.integration.port.SupplierOffer;
@@ -101,7 +97,7 @@ class PropertySyncServiceTest {
         service(failing(A, FailureReason.TIMEOUT), failing(B, FailureReason.UNAUTHORIZED))
                 .synchronize();
 
-        assertThat(repository.registerCalls).isZero();
+        assertThat(repository.registerCalls()).isZero();
         assertThat(repository.load().isEmpty()).isTrue();
     }
 
@@ -168,43 +164,6 @@ class PropertySyncServiceTest {
         public Mono<SupplierFetchResult<List<SupplierOffer>>> fetchOffers(
                 List<String> propertyCodes, SearchCriteria criteria) {
             return Mono.just(SupplierFetchResult.success(List.of()));
-        }
-    }
-
-    /** 저장소의 계약만 흉내낸다 — 있으면 두고 없으면 넣는다. SQL 검증은 여기서 하지 않는다. */
-    private static final class InMemoryMappingRepository implements MappingRepository {
-
-        private final List<PropertyMapping> properties = new ArrayList<>();
-        private final List<RoomTypeMapping> roomTypes = new ArrayList<>();
-        private long sequence = 0;
-        private int registerCalls = 0;
-
-        @Override
-        public void register(SupplierCode supplier, List<SupplierProperty> incoming) {
-            registerCalls++;
-            for (SupplierProperty property : incoming) {
-                boolean known = properties.stream().anyMatch(mapping ->
-                        mapping.supplier().equals(supplier)
-                                && mapping.propertyCode().equals(property.propertyCode()));
-                if (!known) {
-                    properties.add(new PropertyMapping(++sequence, supplier, property.propertyCode()));
-                }
-                for (SupplierRoomType roomType : property.roomTypes()) {
-                    boolean knownRoomType = roomTypes.stream().anyMatch(mapping ->
-                            mapping.supplier().equals(supplier)
-                                    && mapping.propertyCode().equals(property.propertyCode())
-                                    && mapping.roomTypeCode().equals(roomType.roomTypeCode()));
-                    if (!knownRoomType) {
-                        roomTypes.add(new RoomTypeMapping(
-                                ++sequence, supplier, property.propertyCode(), roomType.roomTypeCode()));
-                    }
-                }
-            }
-        }
-
-        @Override
-        public MappingSnapshot load() {
-            return new MappingSnapshot(List.copyOf(properties), List.copyOf(roomTypes));
         }
     }
 }
