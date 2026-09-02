@@ -20,6 +20,13 @@ spring:
       mode: always
 
 supplier:
+  # 숙소 목록은 정적 콘텐츠라 검색할 때마다 부르지 않는다. 미리 받아 매핑으로 저장해 둔다.
+  sync:
+    on-startup: true
+    # 자주 바뀌지 않는 데이터다. 짧게 잡을수록 얻는 것 없이 공급사 호출만 늘어난다.
+    # 급하면 POST /internal/suppliers/sync 로 직접 돌린다.
+    interval: 1h
+
   # 실제 공급사를 호출하지 않는다. Mock 이 9090 에 떠 있어야 한다.
   #   ./gradlew :mock-supplier:bootRun
   a:

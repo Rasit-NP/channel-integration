@@ -46,7 +46,8 @@ public interface SupplierAdapter {
      *
      * <p>{@code Mono} 를 돌려주는 이유는 여러 공급사를 동시에 기다리기 위해서다. 값을 바로
      * 반환하면 병렬 호출에 별도 스레드 풀이 필요하고, 응답을 기다리는 동안 스레드가 묶인다.
-     * 블로킹은 컨트롤러 경계 한 곳에서만 한다.
+     * 블로킹은 <b>바깥 경계</b>에서 한 번만 한다 — 컨트롤러, 그리고 동기화를 돌리는
+     * 기동·스케줄러 진입점이 그 경계다.
      *
      * @param propertyCodes 조회할 숙소 코드. {@link #maxBatchSize()} 이하로 전달되어야 한다.
      * @param criteria      날짜와 인원
