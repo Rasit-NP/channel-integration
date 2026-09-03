@@ -101,6 +101,10 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 `reason` 값은 아래 중 하나다. 공급사가 실패를 어떻게 알렸는지(상태 코드인지 본문 코드인지)는
 드러나지 않는다 — 어댑터가 같은 사유로 정규화한다.
 
+상태 코드로 알리든 본문 코드로 알리든 **같은 해상도로 나뉜다.** 아래 재시도 열이 통지 방식과
+무관하게 성립해야 이 표가 쓸모가 있다 — 인증 실패를 `SUPPLIER_ERROR` 로 내보내면 클라이언트가
+무의미한 재시도를 하게 된다.
+
 | `reason` | 뜻 | 재시도 |
 | --- | --- | --- |
 | `TIMEOUT` | 제때 응답하지 않음 (연결·응답·검색 전체 상한) | 가능 |
@@ -147,15 +151,33 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
           { "date": "2026-09-03", "amount": 132000, "taxAmount": 12000 }
         ]
       }
+    },
+    {
+      "propertyId": 3,
+      "propertyName": "Riverside Hotel Seoul",
+      "roomTypeId": 3,
+      "roomTypeName": "Deluxe Twin Room",
+      "maxOccupancy": 2,
+      "availableRooms": 1,
+      "supplier": "B",
+      "breakfastIncluded": true,
+      "price": { "totalAmount": 452000, "currency": "KRW" }
     }
   ],
-  "suppliers": [ { "supplier": "A", "status": "OK" } ],
+  "suppliers": [ { "supplier": "A", "status": "OK" }, { "supplier": "B", "status": "OK" } ],
   "partial": false,
   "excludedSoldOut": 1,
   "excludedUnmapped": 0,
   "excludedOverCapacity": 0
 }
 ```
+
+두 번째 상품이 **총액만 주는 공급사**의 응답이다. 세액과 날짜별 내역이 `0` 이나 `[]` 이 아니라
+**필드 자체가 없는 채로** 나간다. 같은 이름의 숙소지만 출처가 다르므로 내부 식별자도 다르고,
+조식 포함 여부가 요금과 함께 보인다.
+
+`stays[]` 의 순서는 정해져 있지 않다. 공급사를 병렬로 조회하고 도착한 순서로 담기 때문이다.
+정렬이 필요하면 클라이언트가 한다.
 
 ### 예시 — 부분 실패
 
@@ -172,20 +194,6 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
   "excludedSoldOut": 0,
   "excludedUnmapped": 0,
   "excludedOverCapacity": 0
-}
-```
-
-### 예시 — 총액만 주는 공급사
-
-세액과 날짜별 내역이 **없는 채로** 나간다.
-
-```jsonc
-{
-  "propertyId": 3, "propertyName": "Riverside Hotel Seoul",
-  "roomTypeId": 3, "roomTypeName": "Deluxe Twin Room",
-  "maxOccupancy": 2, "availableRooms": 3,
-  "supplier": "B", "breakfastIncluded": true,
-  "price": { "totalAmount": 452000, "currency": "KRW" }
 }
 ```
 

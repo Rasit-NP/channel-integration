@@ -39,7 +39,8 @@ graph LR
 | --- | --- | --- |
 | `domain` | 표준 모델과 판정 규칙 | `StayPrice`, `Availability`, `DateRange`, `Money`, `Stay`, `MappingSnapshot` |
 | `port` | 바깥과 만나는 경계(인터페이스와 그 자료형) | `SupplierAdapter`, `MappingRepository`, `SupplierFetchResult`, `FailureReason` |
-| `adapter.a` | 공급사 A 연동 | `SupplierAAdapter`, `SupplierAMapper`, `SupplierAResponses` |
+| `adapter.a` | 공급사 A 연동 (날짜별 요금 · 상태 코드로 실패 통지) | `SupplierAAdapter`, `SupplierAMapper`, `SupplierAResponses` |
+| `adapter.b` | 공급사 B 연동 (총액만 · 200 + 본문 코드로 실패 통지) | `SupplierBAdapter`, `SupplierBMapper`, `SupplierBResults`, `SupplierBResponses` |
 | `adapter.support` | 어댑터 공통 도구 | `SupplierWebClients`, `HttpFailures`, `SupplierHttpProperties` |
 | `adapter.persistence` | 매핑 저장소 구현 | `JdbcMappingRepository` |
 | `application` | 유스케이스 조립 | `StaySearchService`, `PropertySyncService`, `PropertySyncSchedule` |
@@ -53,7 +54,7 @@ graph LR
 
 | 경계 | 장치 |
 | --- | --- |
-| 공급사 DTO 가 밖으로 새지 않는다 | `SupplierAResponses` 가 package-private. 다른 패키지에서 참조하면 컴파일되지 않는다 |
+| 공급사 DTO 가 밖으로 새지 않는다 | `SupplierAResponses`·`SupplierBResponses` 가 package-private. 다른 패키지에서 참조하면 컴파일되지 않는다 |
 | 실패를 빠뜨리지 않는다 | `SupplierFetchResult` 가 `sealed`. `switch` 에서 성공/실패를 모두 다루지 않으면 컴파일되지 않는다 |
 | 내부 식별자가 흔들리지 않는다 | 매핑 테이블의 unique 제약([schema.sql](../src/main/resources/schema.sql)) |
 
@@ -147,8 +148,8 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | 테스트 | 무엇을 본다 | 무엇을 안 본다 |
 | --- | --- | --- |
 | `domain/*Test` | 판정·합산 규칙 자체 | 네트워크, DB, 프레임워크 |
-| `SupplierAAdapterTest` | 응답 → 표준 모델 변환, 실패 사유 분류 | 전송 계층(응답을 갈아끼운다) |
-| `SupplierAMockIntegrationTest` | Netty 타임아웃, 직렬화 경로, Mock 모드 전환 | 검색 조립 |
+| `SupplierAAdapterTest`, `SupplierBAdapterTest` | 응답 → 표준 모델 변환, 실패 사유 분류 | 전송 계층(응답을 갈아끼운다) |
+| `SupplierAMockIntegrationTest`, `SupplierBMockIntegrationTest` | Netty 타임아웃, 직렬화 경로, Mock 모드 전환 | 검색 조립 |
 | `JdbcMappingRepositoryTest` | 실제 H2 에서 식별자 안정성, unique 제약 | 그 위의 로직 |
 | `PropertySyncServiceTest`, `StaySearchServiceTest` | 분할·병합·제외 판정 | SQL, HTTP |
 | `StaySearchControllerTest`, `SyncControllerTest` | 응답 스키마, 상태 코드 | 실제 공급사 |
@@ -172,6 +173,9 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | 없는 세액·내역은 0 이 아니라 부재 | `StaySearchControllerTest.omitsOptionalPriceFields` |
 | 총액은 요청 기간에 대해서만 만든다 | `StayPriceTest.AgainstRequestedDates`, `SupplierAAdapterTest.ignoresRatesOutsideRequestedDates` |
 | 한 건을 못 옮겨도 묶음 전체를 버리지 않는다 | `SupplierAAdapterTest.dropsOnlyTheItemThatCannotBePriced` |
+| 통지 방식이 달라도 같은 사유로 정규화된다 | `SupplierAMockIntegrationTest.supplierErrorMode` ↔ `SupplierBMockIntegrationTest.supplierErrorMode`, `StaySearchMockIntegrationTest.normalizesBothFailureStyles` |
+| 한 공급사가 죽어도 나머지로 응답한다 | `StaySearchMockIntegrationTest.survivesOneSupplierOutage` |
+| 공급사를 추가해도 도메인·검색은 그대로다 | `adapter.b` 추가 커밋의 diff — `domain`·`port`·`application`·`api` 0 줄 |
 
 ---
 

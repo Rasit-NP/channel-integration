@@ -27,13 +27,17 @@
 | 숙소 목록 동기화 — 기동 · 주기 · 수동 | ✅ 구현 |
 | 통합 검색 API | ✅ 구현 |
 | 연동 견고성 — 병렬 호출 · 부분 실패 병합 | ✅ 구현 |
-| 공급사 B 어댑터 | 📐 설계 확정 · 미구현 |
+| 공급사 B 어댑터 | ✅ 구현 |
 
-테스트 85개가 이 상태를 지키고 있습니다.
+테스트 113개가 이 상태를 지키고 있습니다.
 
 **핵심 흐름은 끝까지 돕니다** — 공급사 숙소 목록 조회 → 매핑 저장 → 검색 요청 → 묶음 분할 →
-병렬 조회 → 정규화 → 병합 → 응답. 다만 지금 연결된 공급사가 A 하나뿐이라, 실패 판정 통일이
-두 가지 통지 방식 위에서 동작하는 것은 B 를 붙여야 보입니다.
+병렬 조회 → 정규화 → 병합 → 응답. 공급사가 둘이므로 **실패 판정 통일과 부분 실패가 실제로
+관측됩니다** — A 는 503 으로, B 는 200 + 본문 코드로 실패를 알리는데 응답에는 같은 사유가
+나가고, 한쪽이 죽어도 나머지 결과로 응답합니다.
+
+**B 를 붙이며 `domain`·`application`·`api` 는 한 줄도 고치지 않았습니다.** 늘어난 것은
+`adapter/b/` 패키지와 설정뿐입니다(§신규 공급사 추가 방법).
 
 ---
 
@@ -72,8 +76,11 @@ curl -X POST http://localhost:8080/internal/suppliers/sync
 
 ```jsonc
 {
-  "suppliers": [ { "supplier": "A", "status": "OK", "properties": 2, "roomTypes": 2 } ],
-  "properties": 2, "roomTypes": 2,
+  "suppliers": [
+    { "supplier": "A", "status": "OK", "properties": 2, "roomTypes": 2 },
+    { "supplier": "B", "status": "OK", "properties": 1, "roomTypes": 1 }
+  ],
+  "properties": 3, "roomTypes": 3,
   "partial": false
 }
 ```
@@ -88,26 +95,38 @@ Mock 을 띄우지 않고 앱만 기동해도 **애플리케이션은 정상적�
 curl "http://localhost:8080/api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&children=0"
 ```
 
-Mock 기본 데이터로는 상품 하나가 나옵니다. 나머지 하나는 09-02 재고가 0 이라 빠지고, 빠졌다는
-사실이 `excludedSoldOut` 에 남습니다(§재고 판정).
+Mock 기본 데이터로는 **두 공급사에서 하나씩** 나옵니다. A 의 나머지 하나는 09-02 재고가 0 이라
+빠지고, 빠졌다는 사실이 `excludedSoldOut` 에 남습니다(§재고 판정).
+
+**두 상품은 같은 이름의 숙소입니다.** 합치지 않고 각각 노출하며(§동일 숙소를 병합하지 않는 이유),
+요금과 함께 조식 포함 여부가 보이므로 무엇이 포함된 값인지 비교할 수 있습니다.
 
 ```jsonc
 {
-  "stays": [{
-    "propertyId": 1, "propertyName": "Riverside Hotel Seoul",
-    "roomTypeId": 1, "roomTypeName": "Deluxe Twin",
-    "maxOccupancy": 2, "availableRooms": 1,        // 재고 3/1/5 의 최솟값
-    "supplier": "A", "breakfastIncluded": false,
-    "price": { "totalAmount": 429000, "currency": "KRW", "taxAmount": 39000,
-               "nightlyRates": [ /* 3박치 */ ] }
-  }],
-  "suppliers": [{ "supplier": "A", "status": "OK" }],
+  "stays": [
+    {
+      "propertyId": 1, "propertyName": "Riverside Hotel Seoul",
+      "roomTypeId": 1, "roomTypeName": "Deluxe Twin",
+      "maxOccupancy": 2, "availableRooms": 1,        // 재고 3/1/5 의 최솟값
+      "supplier": "A", "breakfastIncluded": false,
+      "price": { "totalAmount": 429000, "currency": "KRW", "taxAmount": 39000,
+                 "nightlyRates": [ /* 3박치 */ ] }
+    },
+    {
+      "propertyId": 3, "propertyName": "Riverside Hotel Seoul",
+      "roomTypeId": 3, "roomTypeName": "Deluxe Twin Room",
+      "maxOccupancy": 2, "availableRooms": 1,
+      "supplier": "B", "breakfastIncluded": true,
+      "price": { "totalAmount": 452000, "currency": "KRW" }   // 세액·내역 필드가 아예 없다
+    }
+  ],
+  "suppliers": [ { "supplier": "A", "status": "OK" }, { "supplier": "B", "status": "OK" } ],
   "partial": false,
   "excludedSoldOut": 1, "excludedUnmapped": 0, "excludedOverCapacity": 0
 }
 ```
 
-공급사를 고장내도 **응답은 200** 입니다(§부분 실패 허용). 결과는 비지만 왜 비었는지가 남습니다.
+한쪽을 고장내도 **응답은 200 이고, 살아 있는 공급사의 결과는 그대로 나옵니다**(§부분 실패 허용).
 
 ```bash
 curl -X POST 'http://localhost:9090/control/a/mode?value=error'
@@ -115,11 +134,21 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=error'
 
 ```jsonc
 {
-  "stays": [],
-  "suppliers": [{ "supplier": "A", "status": "FAILED", "reason": "SUPPLIER_ERROR" }],
+  "stays": [ /* B 의 상품 1건 */ ],
+  "suppliers": [
+    { "supplier": "A", "status": "FAILED", "reason": "SUPPLIER_ERROR" },
+    { "supplier": "B", "status": "OK" }
+  ],
   "partial": true,
   "excludedSoldOut": 0, "excludedUnmapped": 0, "excludedOverCapacity": 0
 }
+```
+
+**두 공급사를 함께 고장내면 실패 판정 통일이 보입니다.** A 는 503 으로, B 는 200 + 본문 코드로
+알리는데 응답에 나가는 사유는 둘 다 `SUPPLIER_ERROR` 입니다(§실패 판정 통일).
+
+```bash
+curl -X POST 'http://localhost:9090/control/b/mode?value=error'
 ```
 
 ### 설정
@@ -133,6 +162,11 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=error'
 | `supplier.a.connect-timeout` | `2s` | 연결 제한 (§타임아웃) |
 | `supplier.a.response-timeout` | `3s` | 응답 제한 (§타임아웃) |
 | `supplier.a.max-batch-size` | `50` | 한 번에 조회할 숙소 코드 수 상한 |
+| `supplier.b.base-url` | `http://localhost:9090` | 공급사 B 주소 (Mock) |
+| `supplier.b.api-key` | `local-dev-key` | 공급사 B 인증 키 |
+| `supplier.b.connect-timeout` | `2s` | 연결 제한 (§타임아웃) |
+| `supplier.b.response-timeout` | `3s` | 응답 제한 (§타임아웃) |
+| `supplier.b.max-batch-size` | `50` | 한 번에 조회할 숙소 코드 수 상한. **값은 어댑터마다 따로 선언**하므로 공급사끼리 달라도 됩니다 |
 | `supplier.search.max-concurrency` | `4` | 한 공급사에 동시에 띄우는 묶음 호출 수 상한 |
 | `supplier.search.timeout` | `5s` | 검색 전체 상한 (§검색 전체에도 상한을 둔다) |
 
@@ -319,6 +353,15 @@ B 는 장애 상황에서도 HTTP 200 을 주기 때문에, 상태 코드만 보
 도메인 계층은 "A 는 상태 코드, B 는 본문 코드"라는 사실을 알지 못합니다. 공급사가 늘어도
 도메인은 그대로입니다.
 
+**전송 계층의 실패는 여전히 공통입니다.** 연결이 안 되거나 응답이 늦거나 인프라가 5xx 를 내는
+것은 어느 공급사에게나 똑같이 생기는 일이라 두 어댑터가 같은 코드를 씁니다. B 도 상태 코드 판정을
+버리는 게 아니라, **그 위에 본문 코드 판정을 얹습니다.** 층이 다릅니다.
+
+**두 방식이 같은 해상도로 정규화됩니다.** A 가 상태 코드로 구분하는 것(잘못된 요청 400, 인증 실패
+401, 호출 한도 초과 429)을 B 는 결과 코드로 구분합니다. 통지 수단이 다를 뿐 담기는 정보가 줄지
+않아야 "같은 실패로 정규화했다"가 성립합니다 — 전부 `SUPPLIER_ERROR` 로 뭉개면 클라이언트는 인증
+문제에 재시도를 걸고 한도 초과에 즉시 재시도를 겁니다.
+
 ### 타임아웃
 
 | 구간 | 값 | 근거 |
@@ -502,6 +545,11 @@ upsert 하나, 읽기는 전체 조회 둘입니다. 이 규모에서 ORM 이 �
 검색 로직은 등록된 어댑터 목록을 순회할 뿐 각 공급사를 알지 못하므로, 위 다섯 단계 외에
 고칠 곳이 없습니다. 계층별로 무엇을 알고 무엇을 모르는지는
 [docs/architecture.md](docs/architecture.md) 에 정리해 두었습니다.
+
+**이건 주장이 아니라 실측입니다.** 공급사 B 를 붙이면서 늘어난 것은 `adapter/b/` 패키지 다섯
+파일과 `application.yaml` 의 `supplier.b.*` 블록뿐이고, **`domain`·`port`·`application`·`api`
+운영 코드는 한 줄도 바뀌지 않았습니다.** B 가 A 와 요금 표현도(총액만) 실패 통지 방식도(200 +
+본문 코드) 다르다는 점에서, 흡수해야 할 차이가 실제로 있는 상태에서 확인한 결과입니다.
 
 ---
 

@@ -43,3 +43,12 @@ supplier:
     connect-timeout: 2s
     response-timeout: 3s
     max-batch-size: 50
+
+  b:
+    base-url: http://localhost:9090
+    api-key: local-dev-key
+    connect-timeout: 2s
+    response-timeout: 3s
+    # 값은 A 와 같지만 선언은 어댑터마다 따로 한다. 검색 로직은 어댑터가 선언한 값에
+    # 맞춰 나눌 뿐, 그 값이 무엇인지도 공급사마다 같은지도 알지 못한다.
+    max-batch-size: 50
