@@ -21,4 +21,8 @@ record SupplierAProperties(
         @DefaultValue("2s") Duration connectTimeout,
         @DefaultValue("3s") Duration responseTimeout,
         @DefaultValue("50") int maxBatchSize) implements SupplierHttpProperties {
+
+    SupplierAProperties {
+        maxBatchSize = SupplierHttpProperties.requireUsableBatchSize(maxBatchSize);
+    }
 }

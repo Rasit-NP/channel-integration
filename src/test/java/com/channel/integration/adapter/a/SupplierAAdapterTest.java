@@ -1,6 +1,7 @@
 package com.channel.integration.adapter.a;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -39,6 +40,16 @@ class SupplierAAdapterTest {
     private static SupplierAProperties properties() {
         return new SupplierAProperties(
                 "http://supplier-a.test", "key", Duration.ofSeconds(2), Duration.ofSeconds(3), 50);
+    }
+
+    @Test
+    @DisplayName("묶음 크기 상한이 1 미만이면 설정 자체가 만들어지지 않는다 — 기동 때 걸러진다")
+    void rejectsUnusableBatchSize() {
+        // 0 이면 검색이 묶음을 나누다 끝나지 않는다. 요청 때가 아니라 기동 때 드러나야 한다.
+        assertThatThrownBy(() -> new SupplierAProperties(
+                "http://supplier-a.test", "key", Duration.ofSeconds(2), Duration.ofSeconds(3), 0))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("묶음 크기 상한");
     }
 
     private static SupplierAAdapter adapterReturning(ExchangeFunction exchange) {

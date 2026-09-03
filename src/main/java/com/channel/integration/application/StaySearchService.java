@@ -107,6 +107,12 @@ public class StaySearchService {
 
     /** 묶는 것은 공급사의 제약이고, 나누는 일은 여기서 한다. 한계값은 어댑터가 선언한다. */
     private static List<List<String>> partition(List<String> codes, int size) {
+        if (size < 1) {
+            // 설정은 기동 때 걸러지지만, 한계값은 어댑터 구현이 선언하는 값이라 여기서도 확인한다.
+            // 이 값이 0 이면 아래 반복이 끝나지 않는다 — 잘못된 값 하나로 스레드가 멈추는 것보다
+            // 그 자리에서 드러나는 편이 낫다.
+            throw new IllegalArgumentException("묶음 크기 상한은 1 이상이어야 한다: " + size);
+        }
         List<List<String>> batches = new ArrayList<>();
         for (int start = 0; start < codes.size(); start += size) {
             batches.add(List.copyOf(codes.subList(start, Math.min(start + size, codes.size()))));

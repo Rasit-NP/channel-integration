@@ -1,6 +1,7 @@
 package com.channel.integration.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -85,6 +86,17 @@ class StaySearchServiceTest {
             search(adapter);
 
             assertThat(adapter.receivedBatches()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("어댑터가 1 미만을 선언하면 나누다 멈추지 않고 그 자리에서 드러난다")
+        void rejectsUnusableBatchSize() {
+            // 0 이면 나누는 반복이 끝나지 않는다. 설정은 기동 때 걸러지지만 여기도 막아 둔다.
+            StubAdapter broken = new StubAdapter(A, 0, batch -> success());
+
+            assertThatThrownBy(() -> search(broken))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("묶음 크기 상한");
         }
 
         @Test
