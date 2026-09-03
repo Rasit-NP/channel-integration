@@ -275,6 +275,119 @@ class SupplierAAdapterTest {
 
     // ── 정규화 경계 ──────────────────────────────────────────────
 
+    // ── 포트 계약: 어떤 경우에도 결과를 돌려준다 ─────────────────
+
+    @Test
+    @DisplayName("본문이 null 로 와도 값 없이 끝나지 않는다")
+    void nullBodyStillReturnsResult() {
+        // 디코딩되어 아무 값도 안 남는 경우다. 빈 문자열은 디코더가 오류로 잡지만 이건 조용히
+        // 통과해, 값 없이 끝나면 호출한 쪽에서 이 공급사가 통째로 사라진다.
+        var result = adapterWithJson(HttpStatus.OK, "null")
+                .fetchOffers(List.of("A-10023"), CRITERIA).block();
+
+        assertThat(result).isNotNull();
+        assertThat(result.failureReason()).contains(FailureReason.MALFORMED_RESPONSE);
+    }
+
+    @Test
+    @DisplayName("숙소 목록도 본문이 null 이면 실패 값을 준다")
+    void nullBodyOnPropertiesStillReturnsResult() {
+        var result = adapterWithJson(HttpStatus.OK, "null").fetchProperties().block();
+
+        assertThat(result).isNotNull();
+        assertThat(result.failureReason()).contains(FailureReason.MALFORMED_RESPONSE);
+    }
+
+    @Test
+    @DisplayName("해석은 됐지만 항목이 없는 본문은 빈 성공이다 — 실패가 아니다")
+    void emptyObjectIsEmptySuccess() {
+        var result = adapterWithJson(HttpStatus.OK, "{}")
+                .fetchOffers(List.of("A-10023"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.asOptional().orElseThrow()).isEmpty();
+    }
+
+    // ── 한 건이 전체를 죽이지 않는다 ─────────────────────────────
+
+    @Test
+    @DisplayName("수용 인원이 0 인 객실 타입만 빠지고 숙소 목록은 살아남는다")
+    void skipsRoomTypeWithUnusableOccupancy() {
+        String body = """
+                {
+                  "items": [
+                    { "hotelCode": "A-10023", "hotelName": "Riverside", "roomTypes": [
+                      { "roomTypeCode": "BROKEN", "roomTypeName": "Broken", "maxOccupancy": 0 },
+                      { "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2 }
+                    ] }
+                  ]
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body).fetchProperties().block();
+
+        assertThat(result.isSuccess()).isTrue();
+        var properties = result.asOptional().orElseThrow();
+        assertThat(properties).hasSize(1);
+        assertThat(properties.getFirst().roomTypes())
+                .extracting("roomTypeCode").containsExactly("DLX-TWN");
+    }
+
+    @Test
+    @DisplayName("재고가 음수인 날짜만 빠진다 — 그 날은 재고 0 으로 판정된다")
+    void skipsNegativeInventoryDayOnly() {
+        String body = """
+                {
+                  "items": [{
+                    "hotelCode": "A-10023", "roomTypeCode": "DLX-TWN", "maxOccupancy": 2,
+                    "currency": "KRW",
+                    "dailyRates": [
+                      { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                      { "date": "2026-09-02", "remainingRooms": -1, "nightlyRate": 100000, "taxAmount": 10000 },
+                      { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                    ]
+                  }]
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("A-10023"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        SupplierOffer offer = result.asOptional().orElseThrow().getFirst();
+        // 요금은 3박치가 그대로 성립하고, 재고만 이틀치가 된다.
+        assertThat(offer.price().totalAmount()).isEqualTo(Money.of(330_000, "KRW"));
+        assertThat(offer.inventories()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("값이 이상해 못 옮기는 항목이 있어도 묶음 전체가 실패하지 않는다")
+    void oneBadItemDoesNotFailTheBatch() {
+        // 통화 코드가 3자리가 아니라 Money 를 만들 수 없다.
+        String body = """
+                {
+                  "items": [
+                    { "hotelCode": "A-BAD", "roomTypeCode": "R", "maxOccupancy": 2, "currency": "WONS",
+                      "dailyRates": [
+                        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                      ] },
+                    { "hotelCode": "A-10023", "roomTypeCode": "DLX-TWN", "maxOccupancy": 2, "currency": "KRW",
+                      "dailyRates": [
+                        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                      ] }
+                  ]
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("A-BAD", "A-10023"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.asOptional().orElseThrow())
+                .extracting("propertyCode").containsExactly("A-10023");
+    }
+
     @Test
     @DisplayName("변환할 수 없는 항목은 건너뛰고 나머지는 살린다")
     void skipsUnmappableItemsOnly() {

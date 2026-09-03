@@ -59,6 +59,10 @@ class SupplierAAdapter implements SupplierAdapter {
                 .retrieve()
                 .bodyToMono(HotelsResponse.class)
                 .map(body -> SupplierFetchResult.success(SupplierAMapper.toProperties(body)))
+                // 본문이 null 로 디코딩되면 위 map 이 아예 불리지 않는다. 그대로 두면 이 Mono 가
+                // 값 없이 끝나 "어떤 경우에도 결과를 돌려준다"는 포트 계약이 깨지고, 동기화
+                // 보고서에서 이 공급사가 통째로 사라진다.
+                .defaultIfEmpty(noBody("숙소 목록"))
                 .timeout(properties.responseTimeout())
                 .onErrorResume(error -> Mono.just(toFailure("숙소 목록", error)));
     }
@@ -93,8 +97,13 @@ class SupplierAAdapter implements SupplierAdapter {
                 .bodyToMono(AvailabilityResponse.class)
                 .map(body -> SupplierFetchResult.success(
                         SupplierAMapper.toOffers(body, criteria.dates())))
+                .defaultIfEmpty(noBody("재고·요금"))
                 .timeout(properties.responseTimeout())
                 .onErrorResume(error -> Mono.just(toFailure("재고·요금", error)));
+    }
+
+    private <T> SupplierFetchResult<T> noBody(String operation) {
+        return failure(operation, FailureReason.MALFORMED_RESPONSE, "본문 없음");
     }
 
     private <T> SupplierFetchResult<T> toFailure(String operation, Throwable error) {

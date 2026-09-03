@@ -364,6 +364,103 @@ class SupplierBAdapterTest {
         assertThat(offers.getFirst().propertyCode()).isEqualTo("B77121");
     }
 
+    // ── 포트 계약: 어떤 경우에도 결과를 돌려준다 ─────────────────
+
+    @Test
+    @DisplayName("본문이 null 로 와도 값 없이 끝나지 않는다")
+    void nullBodyStillReturnsResult() {
+        var result = adapterWithJson(HttpStatus.OK, "null")
+                .fetchOffers(List.of("B77120"), CRITERIA).block();
+
+        assertThat(result).isNotNull();
+        assertThat(result.failureReason()).contains(FailureReason.MALFORMED_RESPONSE);
+    }
+
+    @Test
+    @DisplayName("숙소 목록도 본문이 null 이면 실패 값을 준다")
+    void nullBodyOnPropertiesStillReturnsResult() {
+        var result = adapterWithJson(HttpStatus.OK, "null").fetchProperties().block();
+
+        assertThat(result).isNotNull();
+        assertThat(result.failureReason()).contains(FailureReason.MALFORMED_RESPONSE);
+    }
+
+    // ── 한 건이 전체를 죽이지 않는다 ─────────────────────────────
+
+    @Test
+    @DisplayName("수용 인원이 0 인 객실 타입만 빠지고 숙소 목록은 살아남는다")
+    void skipsRoomTypeWithUnusableOccupancy() {
+        String body = """
+                {
+                  "resultCode": "0000",
+                  "data": { "items": [
+                    { "propertyId": "B77120", "propertyName": "Riverside", "rooms": [
+                      { "roomId": "BROKEN", "roomName": "Broken", "maxOccupancy": 0 },
+                      { "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2 }
+                    ] }
+                  ] }
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body).fetchProperties().block();
+
+        assertThat(result.isSuccess()).isTrue();
+        var properties = result.asOptional().orElseThrow();
+        assertThat(properties).hasSize(1);
+        assertThat(properties.getFirst().roomTypes())
+                .extracting("roomTypeCode").containsExactly("R-401");
+    }
+
+    @Test
+    @DisplayName("재고가 음수인 날짜만 빠진다 — 그 날은 재고 0 으로 판정된다")
+    void skipsNegativeInventoryDayOnly() {
+        String body = """
+                {
+                  "resultCode": "0000",
+                  "data": { "items": [
+                    { "propertyId": "B77120", "roomId": "R-401", "maxOccupancy": 2,
+                      "currency": "KRW", "totalPrice": 452000, "taxIncluded": true,
+                      "inventory": [
+                        { "date": "2026-09-01", "remainingRooms": 3 },
+                        { "date": "2026-09-02", "remainingRooms": -1 },
+                        { "date": "2026-09-03", "remainingRooms": 5 }
+                      ] }
+                  ] }
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("B77120"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        SupplierOffer offer = result.asOptional().orElseThrow().getFirst();
+        assertThat(offer.price().totalAmount()).isEqualTo(Money.of(452_000, "KRW"));
+        assertThat(offer.inventories()).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("값이 이상해 못 옮기는 항목이 있어도 묶음 전체가 실패하지 않는다")
+    void oneBadItemDoesNotFailTheBatch() {
+        // 통화 코드가 3자리가 아니라 Money 를 만들 수 없다.
+        String body = """
+                {
+                  "resultCode": "0000",
+                  "data": { "items": [
+                    { "propertyId": "B-BAD", "roomId": "R", "maxOccupancy": 2,
+                      "currency": "WONS", "totalPrice": 400000, "taxIncluded": true,
+                      "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] },
+                    { "propertyId": "B77120", "roomId": "R-401", "maxOccupancy": 2,
+                      "currency": "KRW", "totalPrice": 452000, "taxIncluded": true,
+                      "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] }
+                  ] }
+                }""";
+
+        var result = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("B-BAD", "B77120"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.asOptional().orElseThrow())
+                .extracting("propertyCode").containsExactly("B77120");
+    }
+
     @Test
     @DisplayName("변환할 수 없는 항목은 건너뛰고 나머지는 살린다")
     void skipsUnmappableItemsOnly() {

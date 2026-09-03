@@ -66,9 +66,9 @@ class SupplierBAdapter implements SupplierAdapter {
                 .retrieve()
                 .bodyToMono(PropertiesResponse.class)
                 .map(body -> normalize("숙소 목록", body, SupplierBMapper::toProperties))
-                // 본문이 비어 오면 map 이 아예 불리지 않는다. 그대로 두면 이 Mono 가 값 없이
-                // 끝나 버려, "어떤 경우에도 결과를 돌려준다"는 포트 계약이 깨진다.
-                .defaultIfEmpty(emptyBody("숙소 목록"))
+                // 본문이 null 로 디코딩되면 위 map 이 아예 불리지 않는다. 그대로 두면 이 Mono 가
+                // 값 없이 끝나 "어떤 경우에도 결과를 돌려준다"는 포트 계약이 깨진다.
+                .defaultIfEmpty(noBody("숙소 목록"))
                 .timeout(properties.responseTimeout())
                 .onErrorResume(error -> Mono.just(toFailure("숙소 목록", error)));
     }
@@ -99,7 +99,7 @@ class SupplierBAdapter implements SupplierAdapter {
                 .retrieve()
                 .bodyToMono(SearchResponse.class)
                 .map(body -> normalize("재고·요금", body, SupplierBMapper::toOffers))
-                .defaultIfEmpty(emptyBody("재고·요금"))
+                .defaultIfEmpty(noBody("재고·요금"))
                 .timeout(properties.responseTimeout())
                 .onErrorResume(error -> Mono.just(toFailure("재고·요금", error)));
     }
@@ -109,13 +109,13 @@ class SupplierBAdapter implements SupplierAdapter {
      *
      * <p><b>순서가 중요하다.</b> 코드를 안 보고 옮기면 장애 응답({@code data: null})이 빈 목록으로
      * 변해 "성공했는데 결과가 없다"가 된다. 실패가 조용히 사라지는 자리다.
+     *
+     * <p>{@code body} 가 null 인 경우는 여기서 다루지 않는다. Reactor 가 null 을 내보내지 않으므로
+     * 그 경우는 값이 아예 없는 것으로 나타나고, {@code defaultIfEmpty} 가 받는다.
      */
     private <B extends Envelope, T> SupplierFetchResult<T> normalize(
             String operation, B body, Function<B, T> mapper) {
 
-        if (body == null) {
-            return failure(operation, FailureReason.MALFORMED_RESPONSE, "빈 본문");
-        }
         if (!SupplierBResults.succeeded(body.resultCode())) {
             // 상태 코드는 200 이지만 실패다. 바깥에는 정규화된 사유만 나간다.
             return failure(operation, SupplierBResults.reasonOf(body.resultCode()),
@@ -124,7 +124,7 @@ class SupplierBAdapter implements SupplierAdapter {
         return SupplierFetchResult.success(mapper.apply(body));
     }
 
-    private <T> SupplierFetchResult<T> emptyBody(String operation) {
+    private <T> SupplierFetchResult<T> noBody(String operation) {
         return failure(operation, FailureReason.MALFORMED_RESPONSE, "본문 없음");
     }
 

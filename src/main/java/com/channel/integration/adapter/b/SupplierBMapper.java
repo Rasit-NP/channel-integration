@@ -48,10 +48,15 @@ final class SupplierBMapper {
             if (property == null || property.propertyId() == null) {
                 continue;
             }
-            properties.add(new SupplierProperty(
-                    property.propertyId(),
-                    Objects.requireNonNullElse(property.propertyName(), property.propertyId()),
-                    toRoomTypes(property)));
+            try {
+                properties.add(new SupplierProperty(
+                        property.propertyId(),
+                        Objects.requireNonNullElse(property.propertyName(), property.propertyId()),
+                        toRoomTypes(property)));
+            } catch (IllegalArgumentException e) {
+                log.debug("숙소를 옮길 수 없어 건너뛴다: property={} 사유={}",
+                        property.propertyId(), e.getMessage());
+            }
         }
         return List.copyOf(properties);
     }
@@ -62,7 +67,11 @@ final class SupplierBMapper {
         }
         List<SupplierRoomType> roomTypes = new ArrayList<>();
         for (Room room : property.rooms()) {
-            if (room == null || room.roomId() == null || room.maxOccupancy() == null) {
+            if (room == null
+                    || room.roomId() == null
+                    || room.maxOccupancy() == null
+                    // 1명도 못 받는 객실 타입은 상품이 아니다. 이 하나 때문에 숙소를 버리지 않는다.
+                    || room.maxOccupancy() < 1) {
                 continue;
             }
             roomTypes.add(new SupplierRoomType(
@@ -79,9 +88,17 @@ final class SupplierBMapper {
         }
         List<SupplierOffer> offers = new ArrayList<>();
         for (SearchItem item : response.data().items()) {
-            SupplierOffer offer = toOffer(item);
-            if (offer != null) {
-                offers.add(offer);
+            try {
+                SupplierOffer offer = toOffer(item);
+                if (offer != null) {
+                    offers.add(offer);
+                }
+            } catch (IllegalArgumentException e) {
+                // 표준 모델로 만들 수 없는 값이 섞여 있다. 이 한 건만 빠지고 나머지는 그대로 간다 —
+                // 여기서 안 잡으면 onErrorResume 이 받아 묶음 전체가 실패가 된다.
+                log.debug("상품을 옮길 수 없어 건너뛴다: property={} room={} 사유={}",
+                        item == null ? null : item.propertyId(),
+                        item == null ? null : item.roomId(), e.getMessage());
             }
         }
         return List.copyOf(offers);
@@ -107,14 +124,8 @@ final class SupplierBMapper {
             return null;
         }
 
-        StayPrice price;
-        try {
-            price = StayPrice.fromTotal(Money.of(item.totalPrice(), item.currency()));
-        } catch (IllegalArgumentException e) {
-            log.debug("표준 요금으로 옮길 수 없어 건너뛴다: property={} room={} 사유={}",
-                    item.propertyId(), item.roomId(), e.getMessage());
-            return null;
-        }
+        // 금액이나 통화가 이상하면 여기서 예외가 난다. 잡는 자리는 toOffers 의 항목 경계 한 곳이다.
+        StayPrice price = StayPrice.fromTotal(Money.of(item.totalPrice(), item.currency()));
 
         return new SupplierOffer(
                 item.propertyId(),
@@ -134,7 +145,11 @@ final class SupplierBMapper {
         }
         List<DailyInventory> inventories = new ArrayList<>();
         for (Inventory inventory : item.inventory()) {
-            if (inventory == null || inventory.date() == null || inventory.remainingRooms() == null) {
+            // 음수 재고는 그 날짜만 버린다. 빠진 날은 재고 0 으로 판정되므로 보수적인 쪽이다.
+            if (inventory == null
+                    || inventory.date() == null
+                    || inventory.remainingRooms() == null
+                    || inventory.remainingRooms() < 0) {
                 continue;
             }
             inventories.add(new DailyInventory(inventory.date(), inventory.remainingRooms()));
