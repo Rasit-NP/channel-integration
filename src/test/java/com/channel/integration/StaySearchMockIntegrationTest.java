@@ -51,6 +51,10 @@ class StaySearchMockIntegrationTest {
     @Autowired
     private PropertySyncService sync;
 
+    /**
+     * 우리 엔드포인트를 실제 HTTP 로 부르는 테스트 도구다. <b>공급사 연동에 쓰는 클라이언트가
+     * 아니다</b> — 공급사 호출은 어댑터가 WebClient 로만 한다.
+     */
     @Autowired
     private TestRestTemplate rest;
 
