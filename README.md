@@ -546,6 +546,9 @@ upsert 하나, 읽기는 전체 조회 둘입니다. 이 규모에서 ORM 이 �
 고칠 곳이 없습니다. 계층별로 무엇을 알고 무엇을 모르는지는
 [docs/architecture.md](docs/architecture.md) 에 정리해 두었습니다.
 
+**단계별 시그니처와 실제 파일 목록, 빠뜨리기 쉬운 것은
+[docs/adding-supplier.md](docs/adding-supplier.md) 에 있습니다.**
+
 **이건 주장이 아니라 실측입니다.** 공급사 B 를 붙이면서 늘어난 것은 `adapter/b/` 패키지 다섯
 파일과 `application.yaml` 의 `supplier.b.*` 블록뿐이고, **`domain`·`port`·`application`·`api`
 운영 코드는 한 줄도 바뀌지 않았습니다.** B 가 A 와 요금 표현도(총액만) 실패 통지 방식도(200 +
@@ -635,14 +638,17 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=normal'       # 정상 
 | [JOURNAL.md](JOURNAL.md) | 어쩌다 그렇게 됐나 — 바뀐 판단, 시행착오, **AI 활용 기록** | ✅ |
 | [docs/architecture.md](docs/architecture.md) | 계층 의존 방향, 패키지 맵, 두 흐름의 시퀀스, 테스트 전략 | ✅ |
 | [docs/api.md](docs/api.md) | 두 엔드포인트의 전체 스키마 — 요청·응답·부분 실패·에러 | ✅ |
-| `docs/adding-supplier.md` | 신규 공급사 추가 절차 — 인터페이스 시그니처, 실제로 고치는 지점 | 예정 |
+| [docs/adding-supplier.md](docs/adding-supplier.md) | 신규 공급사 추가 절차 — 인터페이스 시그니처, 실제로 고친 지점, 빠뜨리기 쉬운 것 | ✅ |
 | `docs/integration-model.md` | 표준 모델 필드 정의, 공급사별 대응표, 정규화 규칙, 손실 정보 목록 | 예정 |
 | `docs/observability.md` | 공급사별 성공률·응답 지연·타임아웃 비율 지표 설계 | 예정 |
 
-**남은 셋을 지금 쓰지 않는 이유가 있습니다.** `adding-supplier.md` 는 B 를 실제로 붙이면서
-고친 자리를 그대로 적으려고 미뤘습니다 — 지금 쓰면 "이렇게 될 것이다"가 되고, 그건 검증되지
-않은 절차입니다. `integration-model.md` 의 공급사 대응표도 절반이 B 라 같은 이유로 기다립니다.
-`observability.md` 는 구현과 무관한 설계 문서라 순서상 뒤입니다.
+`adding-supplier.md` 는 **B 를 붙인 뒤에 썼습니다.** 미뤄둔 이유가 그것이었습니다 — 붙이기
+전에 썼으면 "이렇게 될 것이다"가 되고, 그건 검증되지 않은 절차입니다. 지금 문서에 적힌 파일
+목록과 줄 수, 빠뜨리기 쉬운 것 일곱 가지는 전부 실제로 밟은 경로에서 나왔습니다.
+
+**남은 둘은 아직 안 썼습니다.** `integration-model.md` 는 B 가 붙어 대응표를 채울 수 있게
+됐으니 이제 쓸 수 있는 상태이고, 순서상 다음입니다. `observability.md` 는 구현과 무관한 설계
+문서라 뒤입니다.
 
 **AI 활용 기록은 [JOURNAL.md](JOURNAL.md) 의 각 일자 `AI 활용` 절에 있습니다.** 무엇을 받아들이고,
 무엇을 고치고, 무엇을 거부했는지를 남겼습니다.
