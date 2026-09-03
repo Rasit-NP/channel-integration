@@ -86,6 +86,10 @@ GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&childre
 
 `sum(nightlyRates[].amount) == totalAmount` 다.
 
+**`nightlyRates` 의 날짜는 요청 기간의 숙박일과 정확히 일치한다.** 공급사가 요청하지 않은 날짜를
+함께 보내면 그 날은 총액에도 내역에도 들어가지 않는다. 반대로 숙박일 하나라도 요금이 없으면 그
+기간의 총액이 성립하지 않으므로 **그 상품은 결과에 담기지 않는다.**
+
 #### `suppliers[]`
 
 | 필드 | 타입 | 항상 있음 | 설명 |

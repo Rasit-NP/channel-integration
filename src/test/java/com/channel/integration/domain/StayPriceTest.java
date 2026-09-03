@@ -1,6 +1,7 @@
 package com.channel.integration.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -10,6 +11,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 class StayPriceTest {
+
+    /** 09-01 체크인 / 09-04 체크아웃 = 3박 (09-01, 09-02, 09-03). */
+    private static final DateRange THREE_NIGHTS =
+            DateRange.of(LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-04"));
 
     private static NightlyRate rate(String date, long net, long tax) {
         return new NightlyRate(LocalDate.parse(date), Money.of(net, "KRW"), Money.of(tax, "KRW"));
@@ -25,7 +30,7 @@ class StayPriceTest {
             StayPrice price = StayPrice.fromNightlyRates(List.of(
                     rate("2026-09-01", 120_000, 12_000),
                     rate("2026-09-02", 150_000, 15_000),
-                    rate("2026-09-03", 120_000, 12_000)));
+                    rate("2026-09-03", 120_000, 12_000)), THREE_NIGHTS);
 
             // (120000+12000) + (150000+15000) + (120000+12000)
             assertThat(price.totalAmount()).isEqualTo(Money.of(429_000, "KRW"));
@@ -37,7 +42,7 @@ class StayPriceTest {
             StayPrice price = StayPrice.fromNightlyRates(List.of(
                     rate("2026-09-01", 120_000, 12_000),
                     rate("2026-09-02", 150_000, 15_000),
-                    rate("2026-09-03", 120_000, 12_000)));
+                    rate("2026-09-03", 120_000, 12_000)), THREE_NIGHTS);
 
             assertThat(price.tax()).contains(Money.of(39_000, "KRW"));
         }
@@ -45,12 +50,67 @@ class StayPriceTest {
         @Test
         @DisplayName("원본 날짜별 내역을 버리지 않는다")
         void keepsBreakdown() {
-            StayPrice price = StayPrice.fromNightlyRates(List.of(
-                    rate("2026-09-01", 88_000, 8_800),
-                    rate("2026-09-02", 99_000, 9_900)));
+            StayPrice price = StayPrice.fromNightlyRates(
+                    List.of(rate("2026-09-01", 88_000, 8_800), rate("2026-09-02", 99_000, 9_900)),
+                    DateRange.of(LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-03")));
 
             assertThat(price.hasNightlyBreakdown()).isTrue();
             assertThat(price.nightlyRates()).hasSize(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("요금 날짜가 요청 기간과 어긋날 때")
+    class AgainstRequestedDates {
+
+        @Test
+        @DisplayName("요청 기간 밖의 날짜는 총액에 넣지 않는다 — 공급사가 얹어 보내도 부풀지 않는다")
+        void ignoresDatesOutsideRange() {
+            // 3박을 물었는데 공급사가 09-04 까지 네 날을 줬다.
+            StayPrice price = StayPrice.fromNightlyRates(List.of(
+                    rate("2026-09-01", 100_000, 10_000),
+                    rate("2026-09-02", 100_000, 10_000),
+                    rate("2026-09-03", 100_000, 10_000),
+                    rate("2026-09-04", 100_000, 10_000)), THREE_NIGHTS);
+
+            assertThat(price.totalAmount()).isEqualTo(Money.of(330_000, "KRW"));
+            assertThat(price.tax()).contains(Money.of(30_000, "KRW"));
+
+            // 내역에도 남기지 않는다. sum(nightlyRates) == totalAmount 가 유지되어야 한다.
+            assertThat(price.nightlyRates()).hasSize(3);
+            assertThat(price.nightlyRates().stream()
+                    .mapToLong(rate -> rate.grossAmount().amount()).sum())
+                    .isEqualTo(price.totalAmount().amount());
+        }
+
+        @Test
+        @DisplayName("숙박일 하나라도 요금이 없으면 총액을 만들 수 없다 — 있는 것만 더하면 과소 청구다")
+        void rejectsMissingNight() {
+            assertThatThrownBy(() -> StayPrice.fromNightlyRates(List.of(
+                    rate("2026-09-01", 100_000, 10_000),
+                    rate("2026-09-03", 100_000, 10_000)), THREE_NIGHTS))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("숙박 3일");
+        }
+
+        @Test
+        @DisplayName("같은 숙박일이 두 번 오면 총액을 만들 수 없다 — 그냥 더하면 하루치를 두 번 청구한다")
+        void rejectsDuplicateNight() {
+            assertThatThrownBy(() -> StayPrice.fromNightlyRates(List.of(
+                    rate("2026-09-01", 100_000, 10_000),
+                    rate("2026-09-01", 120_000, 12_000),
+                    rate("2026-09-02", 100_000, 10_000),
+                    rate("2026-09-03", 100_000, 10_000)), THREE_NIGHTS))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("2026-09-01");
+        }
+
+        @Test
+        @DisplayName("요청 기간과 겹치는 날짜가 하나도 없으면 총액을 만들 수 없다")
+        void rejectsWhenNothingOverlaps() {
+            assertThatThrownBy(() -> StayPrice.fromNightlyRates(List.of(
+                    rate("2026-10-01", 100_000, 10_000)), THREE_NIGHTS))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 
@@ -90,7 +150,7 @@ class StayPriceTest {
         StayPrice fromA = StayPrice.fromNightlyRates(List.of(
                 rate("2026-09-01", 120_000, 12_000),
                 rate("2026-09-02", 150_000, 15_000),
-                rate("2026-09-03", 120_000, 12_000)));
+                rate("2026-09-03", 120_000, 12_000)), THREE_NIGHTS);
         StayPrice fromB = StayPrice.fromTotal(Money.of(452_000, "KRW"));
 
         assertThat(fromA.currency()).isEqualTo(fromB.currency());

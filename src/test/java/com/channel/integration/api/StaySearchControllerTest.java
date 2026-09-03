@@ -20,6 +20,7 @@ import com.channel.integration.application.StaySearchResult;
 import com.channel.integration.application.StaySearchResult.SupplierStatus;
 import com.channel.integration.application.StaySearchService;
 import com.channel.integration.domain.Availability;
+import com.channel.integration.domain.DateRange;
 import com.channel.integration.domain.Money;
 import com.channel.integration.domain.NightlyRate;
 import com.channel.integration.domain.SearchCriteria;
@@ -158,11 +159,14 @@ class StaySearchControllerTest {
 
     // ── 픽스처 ───────────────────────────────────────────────────
 
+    /** 응답 형태만 보는 픽스처다. 요금은 자기 기간(1박)에 대해 완결되어 있으면 된다. */
     private static Stay stayWithBreakdown() {
-        StayPrice price = StayPrice.fromNightlyRates(List.of(new NightlyRate(
-                LocalDate.parse("2026-09-01"),
-                Money.of(120_000, "KRW"),
-                Money.of(12_000, "KRW"))));
+        StayPrice price = StayPrice.fromNightlyRates(
+                List.of(new NightlyRate(
+                        LocalDate.parse("2026-09-01"),
+                        Money.of(120_000, "KRW"),
+                        Money.of(12_000, "KRW"))),
+                DateRange.of(LocalDate.parse("2026-09-01"), LocalDate.parse("2026-09-02")));
         return new Stay(11, "Riverside Hotel Seoul", 22, "Deluxe Twin",
                 2, new Availability(1), SupplierCode.of("A"), false, price);
     }

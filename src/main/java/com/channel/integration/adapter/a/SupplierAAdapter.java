@@ -91,7 +91,8 @@ class SupplierAAdapter implements SupplierAdapter {
                         .build())
                 .retrieve()
                 .bodyToMono(AvailabilityResponse.class)
-                .map(body -> SupplierFetchResult.success(SupplierAMapper.toOffers(body)))
+                .map(body -> SupplierFetchResult.success(
+                        SupplierAMapper.toOffers(body, criteria.dates())))
                 .timeout(properties.responseTimeout())
                 .onErrorResume(error -> Mono.just(toFailure("재고·요금", error)));
     }

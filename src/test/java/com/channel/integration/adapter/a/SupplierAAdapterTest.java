@@ -280,7 +280,9 @@ class SupplierAAdapterTest {
                       "breakfastIncluded": false,
                       "currency": "KRW",
                       "dailyRates": [
-                        { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 }
+                        { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+                        { "date": "2026-09-02", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+                        { "date": "2026-09-03", "remainingRooms": 4, "nightlyRate": 88000, "taxAmount": 8800 }
                       ]
                     }
                   ]
@@ -292,5 +294,78 @@ class SupplierAAdapterTest {
 
         assertThat(offers).hasSize(1);
         assertThat(offers.getFirst().propertyCode()).isEqualTo("A-10044");
+    }
+
+    // ── 요청 기간과 요금 날짜 ────────────────────────────────────
+
+    @Test
+    @DisplayName("요청하지 않은 날짜를 얹어 보내도 총액은 요청 기간만 센다")
+    void ignoresRatesOutsideRequestedDates() {
+        // 3박(09-01~09-03)을 물었는데 공급사가 09-04 를 하나 더 얹어 돌려준 상황.
+        String body = """
+                {
+                  "items": [
+                    {
+                      "hotelCode": "A-10023",
+                      "roomTypeCode": "DLX-TWN",
+                      "maxOccupancy": 2,
+                      "currency": "KRW",
+                      "dailyRates": [
+                        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-04", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                      ]
+                    }
+                  ]
+                }""";
+
+        SupplierOffer offer = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("A-10023"), CRITERIA).block()
+                .asOptional().orElseThrow().getFirst();
+
+        // 네 날을 다 더하면 440,000 이다. 요청한 3박은 330,000 이어야 한다.
+        assertThat(offer.price().totalAmount()).isEqualTo(Money.of(330_000, "KRW"));
+        assertThat(offer.price().nightlyRates()).hasSize(3);
+    }
+
+    @Test
+    @DisplayName("요청 기간을 못 채운 항목만 빠지고 나머지 상품은 그대로 온다")
+    void dropsOnlyTheItemThatCannotBePriced() {
+        // 한 건이 기간을 못 채운다고 묶음 전체가 실패하면 안 된다.
+        String body = """
+                {
+                  "items": [
+                    {
+                      "hotelCode": "A-SHORT",
+                      "roomTypeCode": "STD",
+                      "maxOccupancy": 2,
+                      "currency": "KRW",
+                      "dailyRates": [
+                        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                      ]
+                    },
+                    {
+                      "hotelCode": "A-10023",
+                      "roomTypeCode": "DLX-TWN",
+                      "maxOccupancy": 2,
+                      "currency": "KRW",
+                      "dailyRates": [
+                        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-02", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 },
+                        { "date": "2026-09-03", "remainingRooms": 3, "nightlyRate": 100000, "taxAmount": 10000 }
+                      ]
+                    }
+                  ]
+                }""";
+
+        SupplierFetchResult<List<SupplierOffer>> result = adapterWithJson(HttpStatus.OK, body)
+                .fetchOffers(List.of("A-SHORT", "A-10023"), CRITERIA).block();
+
+        assertThat(result.isSuccess()).isTrue();
+        List<SupplierOffer> offers = result.asOptional().orElseThrow();
+        assertThat(offers).hasSize(1);
+        assertThat(offers.getFirst().propertyCode()).isEqualTo("A-10023");
     }
 }

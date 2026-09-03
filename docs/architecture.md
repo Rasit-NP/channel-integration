@@ -170,6 +170,8 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | 한 공급사가 실패해도 나머지로 응답한다 | `StaySearchServiceTest.survivesOneSupplierFailure` |
 | 연박 재고는 날짜별 최솟값 | `AvailabilityTest`, `StaySearchMockIntegrationTest` |
 | 없는 세액·내역은 0 이 아니라 부재 | `StaySearchControllerTest.omitsOptionalPriceFields` |
+| 총액은 요청 기간에 대해서만 만든다 | `StayPriceTest.AgainstRequestedDates`, `SupplierAAdapterTest.ignoresRatesOutsideRequestedDates` |
+| 한 건을 못 옮겨도 묶음 전체를 버리지 않는다 | `SupplierAAdapterTest.dropsOnlyTheItemThatCannotBePriced` |
 
 ---
 
@@ -179,6 +181,6 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | --- | --- | --- |
 | 공급사 추가 | `adapter.<코드>` 패키지 + 설정 | `domain`, `port`, `application`, `api` |
 | 재고 판정 규칙 변경 | `Availability.forStay` | 그 외 전부 |
-| 요금 정규화 규칙 변경 | `StayPrice` 의 두 팩토리 | 어댑터는 어느 팩토리를 쓸지만 고른다 |
+| 요금 정규화 규칙 변경 | `StayPrice` 의 두 팩토리 | 어댑터는 어느 팩토리를 쓸지 고르고 요청 기간을 넘길 뿐이다 |
 | 저장 기술 교체 | `adapter.persistence` + `schema.sql` | `port.MappingRepository` 를 쓰는 쪽 |
 | 응답 형식 변경 | `api` | `domain`, `application` |

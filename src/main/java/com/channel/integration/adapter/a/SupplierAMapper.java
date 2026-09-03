@@ -4,12 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.channel.integration.adapter.a.SupplierAResponses.AvailabilityItem;
 import com.channel.integration.adapter.a.SupplierAResponses.AvailabilityResponse;
 import com.channel.integration.adapter.a.SupplierAResponses.DailyRate;
 import com.channel.integration.adapter.a.SupplierAResponses.Hotel;
 import com.channel.integration.adapter.a.SupplierAResponses.HotelsResponse;
 import com.channel.integration.domain.DailyInventory;
+import com.channel.integration.domain.DateRange;
 import com.channel.integration.domain.Money;
 import com.channel.integration.domain.NightlyRate;
 import com.channel.integration.domain.StayPrice;
@@ -25,9 +29,12 @@ import com.channel.integration.port.SupplierRoomType;
  * 없기도 하다.
  *
  * <p>A 는 날짜별 단가를 세금 별도로 주므로 {@link StayPrice#fromNightlyRates} 를 쓴다. 합산
- * 규칙 자체는 도메인이 갖고 있고, 여기서는 어느 팩토리를 쓸지만 고른다.
+ * 규칙 자체는 도메인이 갖고 있고, 여기서는 어느 팩토리를 쓸지 고르고 요청 기간을 넘긴다.
+ * 공급사가 요청하지 않은 날짜를 얹어 보내도 총액이 부풀지 않는 것은 그 팩토리가 보장한다.
  */
 final class SupplierAMapper {
+
+    private static final Logger log = LoggerFactory.getLogger(SupplierAMapper.class);
 
     private SupplierAMapper() {
     }
@@ -66,13 +73,16 @@ final class SupplierAMapper {
         return List.copyOf(roomTypes);
     }
 
-    static List<SupplierOffer> toOffers(AvailabilityResponse response) {
+    /**
+     * @param dates 요청 기간. 총액이 이 기간에 대해서만 만들어지도록 {@link StayPrice} 에 넘긴다.
+     */
+    static List<SupplierOffer> toOffers(AvailabilityResponse response, DateRange dates) {
         if (response == null || response.items() == null) {
             return List.of();
         }
         List<SupplierOffer> offers = new ArrayList<>();
         for (AvailabilityItem item : response.items()) {
-            SupplierOffer offer = toOffer(item);
+            SupplierOffer offer = toOffer(item, dates);
             if (offer != null) {
                 offers.add(offer);
             }
@@ -81,7 +91,7 @@ final class SupplierAMapper {
     }
 
     /** 변환할 수 없는 항목은 건너뛴다. 한 건 때문에 나머지 결과를 통째로 버리지 않는다. */
-    private static SupplierOffer toOffer(AvailabilityItem item) {
+    private static SupplierOffer toOffer(AvailabilityItem item, DateRange dates) {
         if (item == null
                 || item.hotelCode() == null
                 || item.roomTypeCode() == null
@@ -109,8 +119,18 @@ final class SupplierAMapper {
             }
         }
 
-        if (nightlyRates.isEmpty()) {
-            return null; // 요금을 만들 수 없으면 상품으로 성립하지 않는다.
+        StayPrice price;
+        try {
+            price = StayPrice.fromNightlyRates(nightlyRates, dates);
+        } catch (IllegalArgumentException e) {
+            // 요청 기간에 대한 총액을 만들 수 없는 항목이다(요금 날짜가 모자라거나 중복이거나 비었다).
+            //
+            // 여기서 잡는 것이 중요하다. 예외를 그대로 흘리면 호출 흐름의 onErrorResume 이 받아
+            // 묶음 전체가 실패가 되고, 바로 위에 적어둔 "한 건 때문에 나머지를 버리지 않는다"가
+            // 깨진다. 한 건만 빠지고 나머지는 그대로 간다.
+            log.debug("요청 기간에 대한 요금을 만들 수 없어 건너뛴다: hotel={} roomType={} 사유={}",
+                    item.hotelCode(), item.roomTypeCode(), e.getMessage());
+            return null;
         }
 
         return new SupplierOffer(
@@ -120,7 +140,7 @@ final class SupplierAMapper {
                 Objects.requireNonNullElse(item.roomTypeName(), item.roomTypeCode()),
                 item.maxOccupancy(),
                 Boolean.TRUE.equals(item.breakfastIncluded()),
-                StayPrice.fromNightlyRates(nightlyRates),
+                price,
                 inventories);
     }
 }
