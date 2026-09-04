@@ -8,6 +8,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 
 import com.channel.integration.port.FailureReason;
 
+import io.netty.channel.ConnectTimeoutException;
 import io.netty.handler.timeout.ReadTimeoutException;
 import reactor.core.Exceptions;
 
@@ -39,13 +40,15 @@ public final class HttpFailures {
         Throwable cause = unwrap(error);
         return switch (cause) {
             case WebClientResponseException e -> fromStatusCode(e.getStatusCode().value());
-            case TimeoutException ignored -> FailureReason.TIMEOUT;
-            case ReadTimeoutException ignored -> FailureReason.TIMEOUT;
+            // 타임아웃 판정을 한 자리로 모은다. 구간마다 예외 타입이 다르고, 어떤 것은 그대로
+            // 오고 어떤 것은 감싸여 오기 때문에 목록을 두 곳에 두면 한쪽에만 타입을 더하다
+            // 분류가 갈린다 — 실제로 연결 타임아웃이 그렇게 빠져 있었다.
+            case Throwable t when hasTimeoutCause(t) -> FailureReason.TIMEOUT;
             case CodecException ignored -> FailureReason.MALFORMED_RESPONSE;
             // 연결 자체가 안 된 경우. 공급사가 떠 있지 않거나 경로에 문제가 있다.
-            case WebClientRequestException e -> hasTimeoutCause(e)
-                    ? FailureReason.TIMEOUT
-                    : FailureReason.SUPPLIER_ERROR;
+            // 시간이 넘어 끊긴 것은 위에서 이미 걸러졌으므로, 여기 남는 것은 거절처럼
+            // 기다리지 않고 즉시 실패한 경우다.
+            case WebClientRequestException ignored -> FailureReason.SUPPLIER_ERROR;
             default -> FailureReason.UNKNOWN;
         };
     }
@@ -64,9 +67,36 @@ public final class HttpFailures {
         return Exceptions.unwrap(error);
     }
 
+    /**
+     * 전송 계층 타임아웃인가.
+     *
+     * <p><b>구간마다 예외 타입이 다르다.</b> 셋을 한 목록에 모아 두는 이유는, 나눠 두면 한쪽에만
+     * 타입을 더하다 같은 사건이 다른 사유로 분류되기 때문이다.
+     *
+     * <table border="1">
+     *   <caption>구간별 예외 타입</caption>
+     *   <tr><td>응답 제한 (Reactor {@code timeout()})</td><td>{@link TimeoutException}</td></tr>
+     *   <tr><td>읽기 제한 (Netty)</td><td>{@link ReadTimeoutException}</td></tr>
+     *   <tr><td>연결 제한 (Netty)</td><td>{@link ConnectTimeoutException}</td></tr>
+     * </table>
+     *
+     * <p>{@link ConnectTimeoutException} 을 따로 적어야 하는 이유는 그것이 {@code ConnectException}
+     * 을 상속할 뿐 <b>다른 두 타입과 아무 관계가 없기</b> 때문이다. 이름만 보고 묶이겠거니 하면
+     * 빠진다.
+     *
+     * <p>그렇다고 {@code ConnectException} 전체를 타임아웃으로 볼 수는 없다. <b>연결 거절은
+     * 기다리지 않고 즉시 실패하는 다른 사건</b>이고, 그건 재시도 판단도 달라진다.
+     */
+    private static boolean isTimeout(Throwable error) {
+        return error instanceof TimeoutException
+                || error instanceof ReadTimeoutException
+                || error instanceof ConnectTimeoutException;
+    }
+
+    /** 감싸여 온 타임아웃까지 본다. {@code WebClientRequestException} 이 원인을 안고 온다. */
     private static boolean hasTimeoutCause(Throwable error) {
         for (Throwable t = error; t != null; t = t.getCause()) {
-            if (t instanceof TimeoutException || t instanceof ReadTimeoutException) {
+            if (isTimeout(t)) {
                 return true;
             }
             if (t.getCause() == t) {

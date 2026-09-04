@@ -23,8 +23,8 @@
 | 공급사별 실패 사유 | 검색·동기화 응답의 `reason` | 응답을 받은 쪽만 안다 |
 
 **결론: 지금 셀 수 있는 것은 실패 건수뿐이다.** 이 문서가 다루는 세 지표 중 성공률은 분모가 없고,
-응답 지연은 원천 데이터가 아예 없으며, 타임아웃 비율은 §검증에서 드러난 것 ①의 이유로 값이
-틀린다.
+응답 지연은 원천 데이터가 아예 없다. 타임아웃 비율은 분류 자체가 틀려 있었는데 그건 고쳤다
+(§검증에서 드러난 것 ①).
 
 다만 **실패 로그가 이미 지표의 축을 갖고 있다.**
 
@@ -71,7 +71,7 @@ Observation API 는 클래스패스에 있지만 **기록할 레지스트리가 
 | --- | --- |
 | 성공률 | `supplier.fetch{outcome=success} / supplier.fetch` — 공급사·작업별 |
 | 응답 지연 | `supplier.fetch` 의 p50·p95·p99 — 평균은 보지 않는다 |
-| 타임아웃 비율 | `supplier.fetch.failure{reason=TIMEOUT} / supplier.fetch` — **단, ① 을 고친 뒤** |
+| 타임아웃 비율 | `supplier.fetch.failure{reason=TIMEOUT} / supplier.fetch` — 연결·응답·검색 전체 상한이 모두 여기 들어온다(§①) |
 
 성공률과 타임아웃 비율의 분모가 같은 `supplier.fetch` 라는 점이 중요하다. **분모를 따로 세면
 두 비율이 서로 안 맞는 순간이 온다.**
@@ -162,7 +162,7 @@ final class MeteredSupplierAdapter implements SupplierAdapter {
 
 이 문서를 쓰면서 확인한 것들이다. **지표를 지금 정의대로 붙이면 틀린 값이 나오는 자리**다.
 
-### ✅ ① 연결 타임아웃이 `TIMEOUT` 으로 안 잡힌다
+### ✅ ① 연결 타임아웃이 `TIMEOUT` 으로 안 잡히고 있었다 — **고쳤다**
 
 닿지 않는 주소로 실제 호출해 확인했다.
 
@@ -170,32 +170,39 @@ final class MeteredSupplierAdapter implements SupplierAdapter {
 예외 타입 = WebClientRequestException
   cause: io.netty.channel.ConnectTimeoutException / connection timed out after 1000 ms
 걸린 시간 = 1104ms
-분류      = SUPPLIER_ERROR      ← TIMEOUT 이 아니다
+분류      = SUPPLIER_ERROR      ← TIMEOUT 이 아니었다
 ```
 
 `HttpFailures.hasTimeoutCause` 는 `java.util.concurrent.TimeoutException` 과
-`io.netty.handler.timeout.ReadTimeoutException` 둘만 본다. 그런데 `ConnectTimeoutException` 은
-**둘 중 어느 것도 아니다** — `java.net.ConnectException` 을 상속한다. 컴파일러가 먼저 알려줬다
+`io.netty.handler.timeout.ReadTimeoutException` 둘만 보고 있었다. 그런데 `ConnectTimeoutException`
+은 **둘 중 어느 것도 아니다** — `java.net.ConnectException` 을 상속한다. 컴파일러가 먼저 알려줬다
 (`ConnectTimeoutException cannot be converted to TimeoutException`).
 
-| 무엇이 끊었나 | 예외 | 현재 분류 | 맞는 분류 |
+| 무엇이 끊었나 | 예외 | 고치기 전 | 지금 |
 | --- | --- | --- | --- |
 | 응답 제한 (Reactor `timeout()`) | `TimeoutException` | `TIMEOUT` | `TIMEOUT` |
 | 읽기 제한 (Netty) | `ReadTimeoutException` | `TIMEOUT` | `TIMEOUT` |
-| **연결 제한 (Netty)** | `ConnectTimeoutException` | **`SUPPLIER_ERROR`** | `TIMEOUT` |
+| **연결 제한 (Netty)** | `ConnectTimeoutException` | **`SUPPLIER_ERROR`** | **`TIMEOUT`** |
+| 연결 거절 (즉시) | `ConnectException` | `SUPPLIER_ERROR` | `SUPPLIER_ERROR` |
 
-**이게 지표에 왜 문제인가.** 타임아웃 비율을 `reason=TIMEOUT` 으로 세면 **연결 타임아웃이 통째로
-빠지고**, 그만큼 `SUPPLIER_ERROR` 가 부풀려진다. `api.md` 는 `SUPPLIER_ERROR` 를 "공급사가 자기 쪽
-오류를 알림"으로 정의했는데, 연결 타임아웃은 **공급사가 아무것도 알린 적이 없는** 경우다.
+**왜 지표 이전의 문제였나.** 타임아웃 비율을 `reason=TIMEOUT` 으로 세면 연결 타임아웃이 통째로
+빠지고 그만큼 `SUPPLIER_ERROR` 가 부풀려진다. 그런데 `api.md` 는 애초에 `TIMEOUT` 을 "제때 응답하지
+않음 **(연결·응답·검색 전체 상한)**"으로 정의해 두었다 — **문서가 맞고 코드가 틀린 상태**였다.
 
-증상도 정반대로 읽힌다. 공급사가 죽어 응답이 없는 것은 우리가 네트워크 경로를 의심할 일인데,
-"공급사가 자기 오류를 알렸다"로 집계되면 **공급사에 문의하게 된다.**
+증상도 정반대로 읽혔다. 응답이 아예 없는 것은 네트워크 경로를 의심할 일인데, `SUPPLIER_ERROR`
+("공급사가 자기 쪽 오류를 알림")로 집계되면 **공급사에 문의하게 된다.**
 
-그리고 README §타임아웃 은 연결 제한 2초를 **근거를 들어 정한 값**으로 내세운다. 지금은 그 값이
-동작한 결과가 **그것을 보려고 만든 지표에 나타나지 않는다.**
+**고친 방식.** 타입을 하나 더하는 것으로 끝내지 않고 **판정 목록을 한 자리(`isTimeout`)로 모았다.**
+목록이 `switch` 와 `hasTimeoutCause` 두 곳에 나뉘어 있던 것이 이 버그의 뿌리였고, 타입만 더하면
+같은 일이 또 생긴다.
 
-현재 테스트는 응답 타임아웃(무응답 모드)만 확인하고 **연결 타임아웃 분류를 확인하는 테스트가
-없다.** 그래서 이 구멍이 남아 있었다.
+**거절과 타임아웃은 계속 가른다.** `ConnectTimeoutException` 이 `ConnectException` 을 상속하므로
+`ConnectException` 전체를 타임아웃으로 보면 연결 거절까지 휩쓸린다. 기다리다 끊긴 것과 즉시
+거절된 것은 재시도 판단이 다르다.
+
+**왜 그동안 안 보였나.** `TIMEOUT` 을 기대하는 테스트 파일이 여덟인데 전부 응답 타임아웃(무응답
+모드)이거나 손으로 만든 실패 값이었고, **연결 타임아웃 분류를 보는 테스트가 하나도 없었다.**
+지금은 `HttpFailuresTest` 가 구간 셋을 모두 고정한다.
 
 ### ✅ ② `TIMEOUT` 하나에 성격이 다른 두 사건이 섞인다
 
@@ -313,11 +320,11 @@ connect(2s)  <  response(3s)  <  search(5s)
 
 구현이 없으므로 여기서 끝나지 않는다. 확인된 것 중 **코드를 고쳐야 하는 것**은 아래다.
 
-| # | 무엇 | 근거 |
-| --- | --- | --- |
-| 1 | 연결 타임아웃을 `TIMEOUT` 으로 분류 + 그것을 고정하는 테스트 | §검증에서 드러난 것 ① |
-| 2 | `TIMEOUT` 두 갈래를 지표에서 구분 | ② |
-| 3 | 어댑터가 버린 항목 세기 | ③ · 열린 문제 4 |
+| # | 무엇 | 근거 | 상태 |
+| --- | --- | --- | --- |
+| 1 | 연결 타임아웃을 `TIMEOUT` 으로 분류 + 그것을 고정하는 테스트 | § ① | **✅ 했다** |
+| 2 | `TIMEOUT` 두 갈래를 지표에서 구분 | § ② | 열린 문제 7 |
+| 3 | 어댑터가 버린 항목 세기 | § ③ | 열린 문제 4 |
 
-1 은 지표 이전에 **응답의 `reason` 값이 지금 틀리다는 뜻**이라, 지표를 붙이지 않더라도 고칠
-값어치가 있다.
+1 을 먼저 한 것은 지표 이전에 **응답의 `reason` 값이 틀렸기** 때문이다. 지표를 붙이지 않더라도
+고칠 값어치가 있는 유일한 항목이었다. 2·3 은 지표를 실제로 붙일 때 함께 다룬다.

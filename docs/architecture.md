@@ -148,6 +148,7 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | 테스트 | 무엇을 본다 | 무엇을 안 본다 |
 | --- | --- | --- |
 | `domain/*Test` | 판정·합산 규칙 자체 | 네트워크, DB, 프레임워크 |
+| `HttpFailuresTest` | **전송 계층 실패의 분류** — 타임아웃 구간 셋, 거절과 타임아웃의 구분 | 공급사별 통지 방식 (어댑터의 몫) |
 | `SupplierAAdapterTest`, `SupplierBAdapterTest` | 응답 → 표준 모델 변환, 실패 사유 분류 | 전송 계층(응답을 갈아끼운다) |
 | `SupplierAMockIntegrationTest`, `SupplierBMockIntegrationTest` | Netty 타임아웃, 직렬화 경로, Mock 모드 전환 | 검색 조립 |
 | `JdbcMappingRepositoryTest` | 실제 H2 에서 식별자 안정성, unique 제약 | 그 위의 로직 |
@@ -174,6 +175,8 @@ WebFlux 를 웹 스택으로 쓰지 않으므로 컨트롤러는 서블릿 스�
 | 총액은 요청 기간에 대해서만 만든다 | `StayPriceTest.AgainstRequestedDates`, `SupplierAAdapterTest.ignoresRatesOutsideRequestedDates` |
 | 한 건을 못 옮겨도 묶음 전체를 버리지 않는다 | `SupplierAAdapterTest.dropsOnlyTheItemThatCannotBePriced` |
 | 통지 방식이 달라도 같은 사유로 정규화된다 | `SupplierAMockIntegrationTest.supplierErrorMode` ↔ `SupplierBMockIntegrationTest.supplierErrorMode`, `StaySearchMockIntegrationTest.normalizesBothFailureStyles` |
+| **끊긴 구간이 달라도 같은 `TIMEOUT` 으로 나간다** (연결·읽기·응답) | `HttpFailuresTest.Timeouts` |
+| **연결 거절은 타임아웃과 갈린다** | `HttpFailuresTest.NotTimeouts.connectionRefused` |
 | 한 공급사가 죽어도 나머지로 응답한다 | `StaySearchMockIntegrationTest.survivesOneSupplierOutage` |
 | 공급사를 추가해도 도메인·검색은 그대로다 | `adapter.b` 추가 커밋의 diff — `domain`·`port`·`application`·`api` 0 줄 |
 
