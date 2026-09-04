@@ -13,11 +13,12 @@ B 를 추가한 커밋(`c05b515`)의 실측이다.
 
 | | 파일 | 줄 |
 | --- | --- | --- |
-| **새로 생김** | `adapter/b/` 여섯 파일 | 459 |
+| **새로 생김** | `adapter/b/` 여섯 파일 | 472 |
 | **고침** | `application.yaml` (`supplier.b.*` 블록) | +9 |
 | **안 바뀜** | `domain`, `port`, `application`, `api` 운영 코드 | **0** |
 
-이 0 이 이 구조의 주장이다. 새 공급사를 붙인 뒤 아래 명령으로 직접 확인한다.
+위 표는 `git show --stat c05b515` 로 그대로 확인된다. **이 0 이 이 구조의 주장이다.** 새 공급사를
+붙인 뒤에는 아래 명령으로 직접 확인한다.
 
 ```bash
 git diff --stat HEAD -- src/main/java/com/channel/integration/domain src/main/java/com/channel/integration/port src/main/java/com/channel/integration/application src/main/java/com/channel/integration/api
